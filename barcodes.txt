@@ -1,0 +1,73 @@
+================================================================================
+          INVENTORY & SALES TRACKING SYSTEM - PRINTABLE BOX BARCODES
+================================================================================
+Instructions:
+  1. Print this file or cut out each barcode section along the dashed lines.
+  2. Affix each barcode label onto the corresponding physical storage box.
+  3. Scan the barcode with the Android app camera to trigger the quick-entry
+     sales modal (Product Name, Available Stock, Quantity Sold, Unit Price).
+================================================================================
+
+--------------------------------------------------------------------------------
+[ BOX 1 ]
+PRODUCT NAME : Chocolates
+BARCODE ID   : BOX-CHOC-001
+DEFAULT PRICE: ₹50.00
+INITIAL STOCK: 100 units
+
+BARCODE SCAN VALUE:
+BOX-CHOC-001
+
+ASCII BARCODE REPRESENTATION (Code 128 / Code 39 Format):
+|| | |||| || | ||| |||| | || | ||| |||| | || | |||| ||| | ||
+|| | |||| || | ||| |||| | || | ||| |||| | || | |||| ||| | ||
+|| | |||| || | ||| |||| | || | ||| |||| | || | |||| ||| | ||
+|| | |||| || | ||| |||| | || | ||| |||| | || | |||| ||| | ||
+|| | |||| || | ||| |||| | || | ||| |||| | || | |||| ||| | ||
+* B O X - C H O C - 0 0 1 *
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+[ BOX 2 ]
+PRODUCT NAME : Cookies
+BARCODE ID   : BOX-COOK-002
+DEFAULT PRICE: ₹35.00
+INITIAL STOCK: 100 units
+
+BARCODE SCAN VALUE:
+BOX-COOK-002
+
+ASCII BARCODE REPRESENTATION (Code 128 / Code 39 Format):
+|||| | || ||| | |||| || | ||| | |||| || | ||| | |||| ||| | ||
+|||| | || ||| | |||| || | ||| | |||| || | ||| | |||| ||| | ||
+|||| | || ||| | |||| || | ||| | |||| || | ||| | |||| ||| | ||
+|||| | || ||| | |||| || | ||| | |||| || | ||| | |||| ||| | ||
+|||| | || ||| | |||| || | ||| | |||| || | ||| | |||| ||| | ||
+* B O X - C O O K - 0 0 2 *
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+[ BOX 3 ]
+PRODUCT NAME : Biscuits
+BARCODE ID   : BOX-BISC-003
+DEFAULT PRICE: ₹25.00
+INITIAL STOCK: 100 units
+
+BARCODE SCAN VALUE:
+BOX-BISC-003
+
+ASCII BARCODE REPRESENTATION (Code 128 / Code 39 Format):
+| |||| | ||| || | |||| | ||| || | |||| ||| | || |||| | ||| ||
+| |||| | ||| || | |||| | ||| || | |||| ||| | || |||| | ||| ||
+| |||| | ||| || | |||| | ||| || | |||| ||| | || |||| | ||| ||
+| |||| | ||| || | |||| | ||| || | |||| ||| | || |||| | ||| ||
+| |||| | ||| || | |||| | ||| || | |||| ||| | || |||| | ||| ||
+* B O X - B I S C - 0 0 3 *
+--------------------------------------------------------------------------------
+
+================================================================================
+SUMMARY OF BARCODE ASSIGNMENTS:
+  • Barcode: BOX-CHOC-001  --> Product: Chocolates (Default: ₹50.00, Stock: 100)
+  • Barcode: BOX-COOK-002  --> Product: Cookies    (Default: ₹35.00, Stock: 100)
+  • Barcode: BOX-BISC-003  --> Product: Biscuits   (Default: ₹25.00, Stock: 100)
+================================================================================
