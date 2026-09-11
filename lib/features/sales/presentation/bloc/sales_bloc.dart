@@ -164,22 +164,33 @@ class SalesBloc extends Bloc<SalesEvent, SalesState> {
     final Map<String, _ProductStatAccumulator> productMap = {};
 
     for (final t in filtered) {
-      totalRevenue += t.totalAmount;
-      totalUnitsSold += t.quantitySold;
-
-      final key = t.productName;
-      if (!productMap.containsKey(key)) {
-        productMap[key] = _ProductStatAccumulator(
-          productName: key,
-          unitsSold: 0,
-          totalRevenue: 0.0,
-          transactionCount: 0,
-        );
+      // Only cash, mobile money, and credit settlements count as revenue.
+      // Unpaid credit transactions are NOT revenue until the account is cleared.
+      if (t.isCash || t.isMobileMoney || t.isCreditSettlement) {
+        totalRevenue += t.totalAmount;
       }
-      final acc = productMap[key]!;
-      acc.unitsSold += t.quantitySold;
-      acc.totalRevenue += t.totalAmount;
-      acc.transactionCount += 1;
+
+      // Settlement records are purely financial — they don't represent product units.
+      if (!t.isCreditSettlement) {
+        totalUnitsSold += t.quantitySold;
+
+        final key = t.productName;
+        if (!productMap.containsKey(key)) {
+          productMap[key] = _ProductStatAccumulator(
+            productName: key,
+            unitsSold: 0,
+            totalRevenue: 0.0,
+            transactionCount: 0,
+          );
+        }
+        final acc = productMap[key]!;
+        acc.unitsSold += t.quantitySold;
+        // Only count non-credit amounts in the per-product revenue breakdown.
+        if (!t.isCredit) {
+          acc.totalRevenue += t.totalAmount;
+        }
+        acc.transactionCount += 1;
+      }
     }
 
     final breakdown = productMap.values.map((acc) {

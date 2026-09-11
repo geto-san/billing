@@ -57,8 +57,11 @@ class SalesTransactionModel extends Equatable {
   bool get isCash => paymentMethod == 'cash';
   bool get isMobileMoney => paymentMethod == 'mobile_money';
   bool get isCredit => paymentMethod == 'credit';
+  bool get isCreditSettlement => paymentMethod == 'credit_settled';
   bool get isMtn => isMobileMoney && mobileNetwork == 'mtn';
   bool get isAirtel => isMobileMoney && mobileNetwork == 'airtel';
+  bool get isSettlementMtn => isCreditSettlement && mobileNetwork == 'mtn';
+  bool get isSettlementAirtel => isCreditSettlement && mobileNetwork == 'airtel';
 
   String get paymentLabel {
     if (isCash) return 'Cash';
@@ -68,6 +71,13 @@ class SalesTransactionModel extends Equatable {
     if (isCredit) {
       final name = creditPersonName;
       return name == null || name.isEmpty ? 'Credit' : 'Credit ($name)';
+    }
+    if (isCreditSettlement) {
+      final name = creditPersonName;
+      final base = name == null || name.isEmpty ? 'Credit Settled' : 'Credit Settled ($name)';
+      if (mobileNetwork == 'mtn') return '$base — MTN';
+      if (mobileNetwork == 'airtel') return '$base — Airtel';
+      return base;
     }
     return paymentMethod;
   }

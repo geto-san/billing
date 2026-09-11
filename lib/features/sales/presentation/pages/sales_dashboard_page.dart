@@ -277,7 +277,7 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${state.filteredTransactions.length} transactions',
+                  'Cash & mobile money only',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.white.withOpacity(0.8),
@@ -592,6 +592,9 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
     int count(bool Function(SalesTransactionModel t) test) =>
         txs.where(test).length;
 
+    final creditPending = sum((t) => t.isCredit);
+    final settlementsTotal = sum((t) => t.isCreditSettlement);
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -612,18 +615,37 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
             ),
           ),
           const SizedBox(height: 12),
-          _paymentRow('Cash', count((t) => t.isCash), sum((t) => t.isCash)),
-          _paymentRow('Mobile money — MTN', count((t) => t.isMtn),
-              sum((t) => t.isMtn)),
+          _paymentRow('Cash', count((t) => t.isCash), sum((t) => t.isCash),
+              countInRevenue: true),
+          _paymentRow(
+              'Mobile money — MTN', count((t) => t.isMtn), sum((t) => t.isMtn),
+              countInRevenue: true),
           _paymentRow('Mobile money — Airtel', count((t) => t.isAirtel),
-              sum((t) => t.isAirtel)),
-          _paymentRow('Credit', count((t) => t.isCredit), sum((t) => t.isCredit)),
+              sum((t) => t.isAirtel),
+              countInRevenue: true),
+          _paymentRow(
+              'Credit settled', count((t) => t.isCreditSettlement), settlementsTotal,
+              countInRevenue: true),
+          const Divider(height: 16),
+          _paymentRow(
+              'Credit (unpaid)', count((t) => t.isCredit), creditPending,
+              countInRevenue: false,
+              amountColor: Colors.orange[700]),
+          if (creditPending > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Pending credit is not counted in revenue until cleared.',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _paymentRow(String label, int count, double amount) {
+  Widget _paymentRow(String label, int count, double amount,
+      {bool countInRevenue = true, Color? amountColor}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -633,8 +655,13 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
           ),
           Text('$count', style: TextStyle(color: Colors.grey[600])),
           const SizedBox(width: 12),
-          Text(MoneyFormat.format(amount),
-              style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            MoneyFormat.format(amount),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: amountColor,
+            ),
+          ),
         ],
       ),
     );
@@ -644,9 +671,12 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
     final cash = state.filteredTransactions.where((t) => t.isCash).toList();
     final mtn = state.filteredTransactions.where((t) => t.isMtn).toList();
     final airtel = state.filteredTransactions.where((t) => t.isAirtel).toList();
-    final otherMm =
-        state.filteredTransactions.where((t) => t.isMobileMoney && !t.isMtn && !t.isAirtel).toList();
+    final otherMm = state.filteredTransactions
+        .where((t) => t.isMobileMoney && !t.isMtn && !t.isAirtel)
+        .toList();
     final credit = state.filteredTransactions.where((t) => t.isCredit).toList();
+    final settlements =
+        state.filteredTransactions.where((t) => t.isCreditSettlement).toList();
 
     return Column(
       children: [
@@ -660,12 +690,15 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
           _txGroup('MOBILE MONEY', otherMm),
         ],
         const SizedBox(height: 16),
-        _txGroup('CREDIT', credit),
+        _txGroup('CREDIT SETTLEMENTS', settlements, isSettlement: true),
+        const SizedBox(height: 16),
+        _txGroup('CREDIT (UNPAID)', credit),
       ],
     );
   }
 
-  Widget _txGroup(String title, List<SalesTransactionModel> items) {
+  Widget _txGroup(String title, List<SalesTransactionModel> items,
+      {bool isSettlement = false}) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -709,9 +742,16 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(tx.productName,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 14)),
+                          Text(
+                            isSettlement
+                                ? (tx.creditPersonName != null &&
+                                        tx.creditPersonName!.isNotEmpty
+                                    ? tx.creditPersonName!
+                                    : tx.productName)
+                                : tx.productName,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14),
+                          ),
                           Text(
                             '${tx.paymentLabel} • ${_timeFormat.format(tx.timestamp)} • ${_dateFormat.format(tx.timestamp)}',
                             style: TextStyle(
@@ -725,22 +765,31 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
                       children: [
                         Text(
                           MoneyFormat.format(tx.totalAmount),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: isSettlement ? Colors.green[700] : null,
+                          ),
                         ),
-                        Text(
-                          '${tx.quantitySold} × ${MoneyFormat.format(tx.unitPrice)}',
-                          style:
-                              TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        ),
+                        if (!isSettlement)
+                          Text(
+                            '${tx.quantitySold} × ${MoneyFormat.format(tx.unitPrice)}',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[600]),
+                          ),
                       ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline,
-                          size: 18, color: Colors.grey),
-                      tooltip: 'Void transaction & restore stock',
-                      onPressed: () => _confirmDeleteTransaction(context, tx),
-                    ),
+                    // Settlement records cannot be voided — only product sales can.
+                    if (!isSettlement)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline,
+                            size: 18, color: Colors.grey),
+                        tooltip: 'Void transaction & restore stock',
+                        onPressed: () =>
+                            _confirmDeleteTransaction(context, tx),
+                      )
+                    else
+                      const SizedBox(width: 48),
                   ],
                 ),
               );

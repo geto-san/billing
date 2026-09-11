@@ -11,6 +11,7 @@ class CreditBloc extends Bloc<CreditEvent, CreditState> {
     on<LoadCreditAccountsEvent>(_onLoad);
     on<SaveCreditAccountEvent>(_onSave);
     on<SettleCreditAccountEvent>(_onSettle);
+    on<DeleteCreditAccountEvent>(_onDelete);
     on<ClearAllCreditEvent>(_onClearAll);
   }
 
@@ -56,6 +57,19 @@ class CreditBloc extends Bloc<CreditEvent, CreditState> {
         final updated = state.accounts
             .map((a) => a.id == settled.id ? settled : a)
             .toList();
+        emit(state.copyWith(accounts: updated, clearError: true));
+      },
+    );
+  }
+
+  Future<void> _onDelete(
+      DeleteCreditAccountEvent event, Emitter<CreditState> emit) async {
+    final result = await repository.deleteAccount(event.accountId);
+    result.fold(
+      (failure) => emit(state.copyWith(errorMessage: failure.message)),
+      (_) {
+        final updated =
+            state.accounts.where((a) => a.id != event.accountId).toList();
         emit(state.copyWith(accounts: updated, clearError: true));
       },
     );

@@ -15,8 +15,6 @@ import '../../../sales/presentation/bloc/sales_bloc.dart';
 import '../../../sales/presentation/bloc/sales_state.dart';
 import '../../../sales/presentation/pages/sales_dashboard_page.dart';
 import '../../../inventory/presentation/pages/inventory_boxes_page.dart';
-import '../../../inventory/presentation/pages/printable_barcodes_page.dart';
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -36,7 +34,6 @@ class _HomePageState extends State<HomePage> {
           _ScanAndSellView(),
           SalesDashboardPage(),
           InventoryBoxesPage(),
-          PrintableBarcodesPage(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -61,11 +58,6 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(Icons.inventory_2_outlined),
             selectedIcon: Icon(Icons.inventory_2),
             label: 'Inventory',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.print_outlined),
-            selectedIcon: Icon(Icons.print),
-            label: 'Barcodes',
           ),
         ],
       ),

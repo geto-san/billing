@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/money_format.dart';
+import '../../../sales/data/models/sales_transaction_model.dart';
+import '../../../sales/presentation/bloc/sales_bloc.dart';
+import '../../../sales/presentation/bloc/sales_event.dart';
 import '../../data/models/credit_account_model.dart';
 import '../bloc/credit_bloc.dart';
 import '../bloc/credit_event.dart';
@@ -38,12 +42,16 @@ class CreditAccountsPage extends StatelessWidget {
             itemBuilder: (context, index) {
               final account = state.accounts[index];
               final remaining = state.remainingCredit(account);
+              final isCleared = account.amountOwed <= 0;
+
               return Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.grey[200]!),
+                  border: Border.all(
+                    color: isCleared ? Colors.green[200]! : Colors.grey[200]!,
+                  ),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,15 +67,33 @@ class CreditAccountsPage extends StatelessWidget {
                             ),
                           ),
                         ),
-                        Text(
-                          MoneyFormat.format(account.amountOwed),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: account.amountOwed > 0
-                                ? Colors.orange[800]
-                                : Colors.green[700],
+                        if (isCleared)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.green[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green[200]!),
+                            ),
+                            child: Text(
+                              'CLEARED',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            MoneyFormat.format(account.amountOwed),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange[800],
+                            ),
                           ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -75,14 +101,17 @@ class CreditAccountsPage extends StatelessWidget {
                       'Opened ${dateFmt.format(account.openedAt)}',
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
-                    Text(
-                      'Limit ${MoneyFormat.format(AppConstants.creditLimitPerAccount)} • Remaining ${MoneyFormat.format(remaining)}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                    ),
+                    if (!isCleared)
+                      Text(
+                        'Limit ${MoneyFormat.format(AppConstants.creditLimitPerAccount)} • Remaining ${MoneyFormat.format(remaining)}',
+                        style:
+                            TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
                     const SizedBox(height: 12),
                     if (account.purchases.isEmpty)
                       Text('No products on this account yet.',
-                          style: TextStyle(color: Colors.grey[500], fontSize: 13))
+                          style:
+                              TextStyle(color: Colors.grey[500], fontSize: 13))
                     else
                       ...account.purchases.map((p) {
                         return Padding(
@@ -109,20 +138,29 @@ class CreditAccountsPage extends StatelessWidget {
                           ),
                         );
                       }),
-                    if (account.amountOwed > 0) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {
-                            context
-                                .read<CreditBloc>()
-                                .add(SettleCreditAccountEvent(account.id));
-                          },
-                          child: const Text('Mark as cleared'),
-                        ),
-                      ),
-                    ],
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (!isCleared)
+                          TextButton.icon(
+                            icon: const Icon(Icons.check_circle_outline,
+                                size: 18),
+                            label: const Text('Mark as cleared'),
+                            onPressed: () =>
+                                _confirmSettle(context, account, state),
+                          ),
+                        if (isCleared)
+                          TextButton.icon(
+                            icon: Icon(Icons.delete_outline,
+                                size: 18, color: Colors.red[400]),
+                            label: Text('Delete account',
+                                style: TextStyle(color: Colors.red[400])),
+                            onPressed: () =>
+                                _confirmDelete(context, account),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               );
@@ -132,7 +170,226 @@ class CreditAccountsPage extends StatelessWidget {
       ),
     );
   }
+
+  /// Asks how the credit was paid (cash / MTN / Airtel), then records a
+  /// revenue transaction and zeros out the account balance.
+  Future<void> _confirmSettle(
+    BuildContext context,
+    CreditAccountModel account,
+    CreditState state,
+  ) async {
+    final result = await showDialog<_SettleResult>(
+      context: context,
+      builder: (ctx) => _SettlePaymentDialog(account: account),
+    );
+    if (result == null || !context.mounted) return;
+
+    // 1. Zero out the account balance in the credit store.
+    context.read<CreditBloc>().add(SettleCreditAccountEvent(account.id));
+
+    // 2. Record a revenue transaction so the cleared amount appears in
+    //    the sales dashboard under cash / mobile money.
+    final settlement = SalesTransactionModel(
+      id: const Uuid().v4(),
+      timestamp: DateTime.now(),
+      boxId: 'credit_settlement',
+      productName: 'Credit settled: ${account.personName}',
+      quantitySold: 0,
+      unitPrice: account.amountOwed,
+      totalAmount: account.amountOwed,
+      paymentMethod: 'credit_settled',
+      mobileNetwork: result.mobileNetwork,
+      creditAccountId: account.id,
+      creditPersonName: account.personName,
+    );
+    context.read<SalesBloc>().add(RecordTransactionEvent(settlement));
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${account.personName}\'s account cleared — '
+            '${MoneyFormat.format(account.amountOwed)} added to revenue.',
+          ),
+          backgroundColor: Colors.green[700],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmDelete(
+      BuildContext context, CreditAccountModel account) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete credit account?'),
+        content: Text(
+          'This will permanently remove ${account.personName}\'s account from the list. '
+          'The account balance is already cleared.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      context.read<CreditBloc>().add(DeleteCreditAccountEvent(account.id));
+    }
+  }
 }
+
+class _SettleResult {
+  final String? mobileNetwork;
+  const _SettleResult({this.mobileNetwork});
+}
+
+class _SettlePaymentDialog extends StatefulWidget {
+  final CreditAccountModel account;
+  const _SettlePaymentDialog({required this.account});
+
+  @override
+  State<_SettlePaymentDialog> createState() => _SettlePaymentDialogState();
+}
+
+class _SettlePaymentDialogState extends State<_SettlePaymentDialog> {
+  String? _method; // 'cash' | 'mtn' | 'airtel'
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Clear ${widget.account.personName}\'s account'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Amount: ${MoneyFormat.format(widget.account.amountOwed)}',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'How was the credit paid?',
+            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          _MethodTile(
+            label: 'Cash',
+            icon: Icons.payments_outlined,
+            iconColor: Colors.green[700]!,
+            selected: _method == 'cash',
+            onTap: () => setState(() => _method = 'cash'),
+          ),
+          const SizedBox(height: 8),
+          _MethodTile(
+            label: 'Mobile Money — MTN',
+            icon: Icons.phone_android,
+            iconColor: const Color(0xFFFFCC00),
+            selected: _method == 'mtn',
+            onTap: () => setState(() => _method = 'mtn'),
+          ),
+          const SizedBox(height: 8),
+          _MethodTile(
+            label: 'Mobile Money — Airtel',
+            icon: Icons.phone_android,
+            iconColor: const Color(0xFFE60000),
+            selected: _method == 'airtel',
+            onTap: () => setState(() => _method = 'airtel'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _method == null
+              ? null
+              : () => Navigator.pop(
+                    context,
+                    _SettleResult(
+                      mobileNetwork: _method == 'cash' ? null : _method,
+                    ),
+                  ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryColor,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Confirm & add to revenue'),
+        ),
+      ],
+    );
+  }
+}
+
+class _MethodTile extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color iconColor;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _MethodTile({
+    required this.label,
+    required this.icon,
+    required this.iconColor,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppTheme.primaryColor.withOpacity(0.08)
+              : Colors.grey[50],
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? AppTheme.primaryColor : Colors.grey[200]!,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: iconColor, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontWeight:
+                      selected ? FontWeight.bold : FontWeight.w500,
+                  color:
+                      selected ? AppTheme.primaryColor : Colors.black87,
+                ),
+              ),
+            ),
+            if (selected)
+              Icon(Icons.check_circle, color: AppTheme.primaryColor, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Credit account picker (used in QuickSaleModal — unchanged below this line)
+// ---------------------------------------------------------------------------
 
 class CreditAccountPicker {
   static Future<CreditAccountModel?> show(

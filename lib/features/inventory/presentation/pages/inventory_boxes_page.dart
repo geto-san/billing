@@ -11,7 +11,6 @@ import '../../../../core/utils/backup_service.dart';
 import '../../../../core/utils/money_format.dart';
 import '../../../../core/utils/printer_helper.dart';
 import '../../../credit/presentation/bloc/credit_bloc.dart';
-import '../../../credit/presentation/bloc/credit_event.dart';
 import '../../../sales/domain/stock_sales_summary.dart';
 import '../../../sales/presentation/bloc/sales_bloc.dart';
 import '../../../sales/presentation/bloc/sales_event.dart';
@@ -475,7 +474,8 @@ class _InventoryBoxCard extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: Text('End stock for ${box.productName}?'),
         content: const Text(
-          'This prints a sales summary for this box, saves it in the backup folder, and clears every open credit account.',
+          'This prints a sales summary for this box and saves it in the backup folder. '
+          'Credit accounts are not affected.',
         ),
         actions: [
           TextButton(
@@ -484,7 +484,7 @@ class _InventoryBoxCard extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Print & clear credit'),
+            child: const Text('Print & save summary'),
           ),
         ],
       ),
@@ -522,7 +522,6 @@ class _InventoryBoxCard extends StatelessWidget {
       summary,
     );
 
-    final creditBloc = context.read<CreditBloc>();
     final salesBloc = context.read<SalesBloc>();
 
     var printed = false;
@@ -530,7 +529,6 @@ class _InventoryBoxCard extends StatelessWidget {
       printed = await PrinterHelper().printPlainText(summary);
     } catch (_) {}
 
-    creditBloc.add(ClearAllCreditEvent());
     await HiveDatabase.settingsBox.put(cycleKey, DateTime.now().toIso8601String());
     salesBloc.add(const LoadSalesEvent());
 
@@ -539,8 +537,8 @@ class _InventoryBoxCard extends StatelessWidget {
       SnackBar(
         content: Text(
           printed
-              ? 'Stock summary printed. Credit cleared.${savedPath != null ? ' Saved to backup.' : ''}'
-              : 'Printer unavailable. Summary saved${savedPath != null ? ' to $savedPath' : ' in backup folder'}. Credit cleared.',
+              ? 'Stock summary printed.${savedPath != null ? ' Saved to backup.' : ''}'
+              : 'Printer unavailable. Summary saved${savedPath != null ? ' to $savedPath' : ' in backup folder'}.',
         ),
         backgroundColor: printed ? Colors.green : Colors.orange[800],
       ),

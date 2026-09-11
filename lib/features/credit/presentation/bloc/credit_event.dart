@@ -24,3 +24,10 @@ class SettleCreditAccountEvent extends CreditEvent {
 }
 
 class ClearAllCreditEvent extends CreditEvent {}
+
+class DeleteCreditAccountEvent extends CreditEvent {
+  final String accountId;
+  const DeleteCreditAccountEvent(this.accountId);
+  @override
+  List<Object?> get props => [accountId];
+}
