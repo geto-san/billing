@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/money_format.dart';
+import '../../../credit/presentation/bloc/credit_bloc.dart';
+import '../../../credit/presentation/bloc/credit_state.dart';
 import '../../../inventory/presentation/bloc/inventory_bloc.dart';
 import '../../../inventory/presentation/bloc/inventory_event.dart';
 import '../../../inventory/presentation/bloc/inventory_state.dart';
@@ -93,25 +95,20 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. Date Filter Chips
                   _buildDateFilterBar(salesState),
                   const SizedBox(height: 16),
-
-                  // 2. Revenue and Units Overview Cards
                   _buildMetricsRow(salesState),
                   const SizedBox(height: 20),
-                  _buildPaymentSplit(salesState),
+                  // Payments section needs live credit data — use BlocBuilder here
+                  BlocBuilder<CreditBloc, CreditState>(
+                    builder: (context, creditState) =>
+                        _buildPaymentSplit(salesState, creditState),
+                  ),
                   const SizedBox(height: 20),
-
-                  // 3. Current Remaining Stock Across All Boxes
                   _buildCurrentStockSection(),
                   const SizedBox(height: 20),
-
-                  // 4. Product Sales Breakdown
                   _buildProductBreakdownSection(salesState),
                   const SizedBox(height: 20),
-
-                  // 5. Detailed Transactions Log
                   _buildTransactionsLogSection(salesState),
                   const SizedBox(height: 40),
                 ],
@@ -123,12 +120,16 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Date filter bar
+  // ---------------------------------------------------------------------------
+
   Widget _buildDateFilterBar(SalesState state) {
     String customLabel = 'Custom Range';
     if (state.currentFilter == DateFilterType.custom &&
         state.customDateRange != null) {
       customLabel =
-          '${_dateFormat.format(state.customDateRange!.start)} - ${_dateFormat.format(state.customDateRange!.end)}';
+          '${_dateFormat.format(state.customDateRange!.start)} – ${_dateFormat.format(state.customDateRange!.end)}';
     }
 
     return Container(
@@ -191,11 +192,9 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(
-                icon,
-                size: 13,
-                color: isSelected ? Colors.white : Colors.grey[600],
-              ),
+              Icon(icon,
+                  size: 13,
+                  color: isSelected ? Colors.white : Colors.grey[600]),
               const SizedBox(width: 4),
             ],
             Flexible(
@@ -216,10 +215,13 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Metrics row (revenue + units sold)
+  // ---------------------------------------------------------------------------
+
   Widget _buildMetricsRow(SalesState state) {
     return Row(
       children: [
-        // Revenue Card
         Expanded(
           flex: 3,
           child: Container(
@@ -288,8 +290,6 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
           ),
         ),
         const SizedBox(width: 12),
-
-        // Items Sold Card
         Expanded(
           flex: 2,
           child: Container(
@@ -300,10 +300,9 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
               border: Border.all(color: Colors.grey[200]!),
               boxShadow: const [
                 BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 6,
-                  offset: Offset(0, 2),
-                ),
+                    color: Colors.black12,
+                    blurRadius: 6,
+                    offset: Offset(0, 2)),
               ],
             ),
             child: Column(
@@ -347,6 +346,106 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
       ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Payments split
+  // Settlements are merged into their respective payment method totals.
+  // Credit (unpaid) is read live from CreditBloc so it updates the moment
+  // an account is cleared or deleted — no page refresh needed.
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPaymentSplit(SalesState salesState, CreditState creditState) {
+    final txs = salesState.filteredTransactions;
+
+    // Cash = regular cash sales + credit settlements paid via cash
+    final cashTotal = txs
+        .where((t) =>
+            t.isCash ||
+            (t.isCreditSettlement && (t.mobileNetwork == null || t.mobileNetwork!.isEmpty)))
+        .fold(0.0, (p, t) => p + t.totalAmount);
+
+    // MTN = regular MTN mobile money + credit settlements paid via MTN
+    final mtnTotal = txs
+        .where((t) => t.isMtn || t.isSettlementMtn)
+        .fold(0.0, (p, t) => p + t.totalAmount);
+
+    // Airtel = regular Airtel mobile money + credit settlements paid via Airtel
+    final airtelTotal = txs
+        .where((t) => t.isAirtel || t.isSettlementAirtel)
+        .fold(0.0, (p, t) => p + t.totalAmount);
+
+    // Live unpaid credit: sum from actual open accounts, not from transaction records.
+    // This updates instantly when an account is cleared or deleted.
+    final creditUnpaid = creditState.openAccounts
+        .fold(0.0, (p, a) => p + a.amountOwed);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'PAYMENTS',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _paymentRow('Cash', cashTotal),
+          _paymentRow('Mobile money — MTN', mtnTotal),
+          _paymentRow('Mobile money — Airtel', airtelTotal),
+          const Divider(height: 20),
+          _paymentRow(
+            'Credit (unpaid)',
+            creditUnpaid,
+            amountColor: creditUnpaid > 0 ? Colors.orange[700] : null,
+          ),
+          if (creditUnpaid > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Pending credit is not counted in revenue until the account is cleared.',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Renders a single payment-row label + amount (no transaction count shown).
+  Widget _paymentRow(String label, double amount, {Color? amountColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
+          Text(
+            MoneyFormat.format(amount),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: amountColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Current stock
+  // ---------------------------------------------------------------------------
 
   Widget _buildCurrentStockSection() {
     return BlocBuilder<InventoryBloc, InventoryState>(
@@ -398,7 +497,8 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
                   final percent = box.initialStock > 0
                       ? (box.currentStock / box.initialStock).clamp(0.0, 1.0)
                       : 0.0;
-                  final isLow = box.currentStock < (box.initialStock * 0.25);
+                  final isLow =
+                      box.currentStock < (box.initialStock * 0.25);
                   final isOut = box.currentStock <= 0;
                   final color = isOut
                       ? Colors.red
@@ -414,12 +514,10 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
                           children: [
                             Row(
                               children: [
-                                Text(
-                                  box.productName,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14),
-                                ),
+                                Text(box.productName,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14)),
                                 const SizedBox(width: 6),
                                 Text(
                                   '(${box.barcode})',
@@ -461,7 +559,8 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
                             value: percent,
                             minHeight: 6,
                             backgroundColor: Colors.grey[200],
-                            valueColor: AlwaysStoppedAnimation<Color>(color),
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(color),
                           ),
                         ),
                       ],
@@ -474,6 +573,10 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
       },
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Product breakdown
+  // ---------------------------------------------------------------------------
 
   Widget _buildProductBreakdownSection(SalesState state) {
     return Container(
@@ -511,7 +614,8 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
                     const SizedBox(height: 8),
                     Text(
                       'No sales recorded for this period',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                      style:
+                          TextStyle(color: Colors.grey[500], fontSize: 13),
                     ),
                   ],
                 ),
@@ -585,98 +689,39 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
     );
   }
 
-  Widget _buildPaymentSplit(SalesState state) {
-    final txs = state.filteredTransactions;
-    double sum(bool Function(SalesTransactionModel t) test) =>
-        txs.where(test).fold(0.0, (p, t) => p + t.totalAmount);
-    int count(bool Function(SalesTransactionModel t) test) =>
-        txs.where(test).length;
-
-    final creditPending = sum((t) => t.isCredit);
-    final settlementsTotal = sum((t) => t.isCreditSettlement);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'PAYMENTS',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _paymentRow('Cash', count((t) => t.isCash), sum((t) => t.isCash),
-              countInRevenue: true),
-          _paymentRow(
-              'Mobile money — MTN', count((t) => t.isMtn), sum((t) => t.isMtn),
-              countInRevenue: true),
-          _paymentRow('Mobile money — Airtel', count((t) => t.isAirtel),
-              sum((t) => t.isAirtel),
-              countInRevenue: true),
-          _paymentRow(
-              'Credit settled', count((t) => t.isCreditSettlement), settlementsTotal,
-              countInRevenue: true),
-          const Divider(height: 16),
-          _paymentRow(
-              'Credit (unpaid)', count((t) => t.isCredit), creditPending,
-              countInRevenue: false,
-              amountColor: Colors.orange[700]),
-          if (creditPending > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Pending credit is not counted in revenue until cleared.',
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _paymentRow(String label, int count, double amount,
-      {bool countInRevenue = true, Color? amountColor}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          ),
-          Text('$count', style: TextStyle(color: Colors.grey[600])),
-          const SizedBox(width: 12),
-          Text(
-            MoneyFormat.format(amount),
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: amountColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // Transactions log
+  // Settlements are shown inside their respective payment group (Cash / MTN /
+  // Airtel) and rendered with a green amount + person name instead of a product
+  // name.  They cannot be voided.
+  // ---------------------------------------------------------------------------
 
   Widget _buildTransactionsLogSection(SalesState state) {
-    final cash = state.filteredTransactions.where((t) => t.isCash).toList();
-    final mtn = state.filteredTransactions.where((t) => t.isMtn).toList();
-    final airtel = state.filteredTransactions.where((t) => t.isAirtel).toList();
-    final otherMm = state.filteredTransactions
-        .where((t) => t.isMobileMoney && !t.isMtn && !t.isAirtel)
+    final txs = state.filteredTransactions;
+
+    // Cash group: regular cash sales + cash-settled credit
+    final cash = txs
+        .where((t) =>
+            t.isCash ||
+            (t.isCreditSettlement &&
+                (t.mobileNetwork == null || t.mobileNetwork!.isEmpty)))
         .toList();
-    final credit = state.filteredTransactions.where((t) => t.isCredit).toList();
-    final settlements =
-        state.filteredTransactions.where((t) => t.isCreditSettlement).toList();
+
+    // MTN group: regular MTN sales + MTN-settled credit
+    final mtn = txs.where((t) => t.isMtn || t.isSettlementMtn).toList();
+
+    // Airtel group: regular Airtel sales + Airtel-settled credit
+    final airtel =
+        txs.where((t) => t.isAirtel || t.isSettlementAirtel).toList();
+
+    // Other mobile money (no network set — edge case)
+    final otherMm = txs
+        .where((t) =>
+            t.isMobileMoney && !t.isMtn && !t.isAirtel)
+        .toList();
+
+    // Credit unpaid: original credit transactions (not yet settled)
+    final credit = txs.where((t) => t.isCredit).toList();
 
     return Column(
       children: [
@@ -690,22 +735,20 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
           _txGroup('MOBILE MONEY', otherMm),
         ],
         const SizedBox(height: 16),
-        _txGroup('CREDIT SETTLEMENTS', settlements, isSettlement: true),
-        const SizedBox(height: 16),
         _txGroup('CREDIT (UNPAID)', credit),
       ],
     );
   }
 
-  Widget _txGroup(String title, List<SalesTransactionModel> items,
-      {bool isSettlement = false}) {
+  Widget _txGroup(String title, List<SalesTransactionModel> items) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey[200]!),
         boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))
+          BoxShadow(
+              color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))
         ],
       ),
       padding: const EdgeInsets.all(16),
@@ -733,71 +776,81 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
             Text('No records in this group.',
                 style: TextStyle(color: Colors.grey[500], fontSize: 13))
           else
-            ...items.map((tx) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isSettlement
-                                ? (tx.creditPersonName != null &&
-                                        tx.creditPersonName!.isNotEmpty
-                                    ? tx.creditPersonName!
-                                    : tx.productName)
-                                : tx.productName,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 14),
-                          ),
-                          Text(
-                            '${tx.paymentLabel} • ${_timeFormat.format(tx.timestamp)} • ${_dateFormat.format(tx.timestamp)}',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[500]),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          MoneyFormat.format(tx.totalAmount),
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: isSettlement ? Colors.green[700] : null,
-                          ),
-                        ),
-                        if (!isSettlement)
-                          Text(
-                            '${tx.quantitySold} × ${MoneyFormat.format(tx.unitPrice)}',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[600]),
-                          ),
-                      ],
-                    ),
-                    // Settlement records cannot be voided — only product sales can.
-                    if (!isSettlement)
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline,
-                            size: 18, color: Colors.grey),
-                        tooltip: 'Void transaction & restore stock',
-                        onPressed: () =>
-                            _confirmDeleteTransaction(context, tx),
-                      )
-                    else
-                      const SizedBox(width: 48),
-                  ],
-                ),
-              );
-            }),
+            ...items.map((tx) => _txRow(tx)),
         ],
       ),
     );
   }
+
+  Widget _txRow(SalesTransactionModel tx) {
+    final isSettlement = tx.isCreditSettlement;
+    final displayName = isSettlement
+        ? 'Credit settled'
+        + (tx.creditPersonName != null && tx.creditPersonName!.isNotEmpty
+            ? ': ${tx.creditPersonName}'
+            : '')
+        : tx.productName;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: isSettlement ? Colors.green[800] : null,
+                  ),
+                ),
+                Text(
+                  '${tx.paymentLabel} • ${_timeFormat.format(tx.timestamp)} • ${_dateFormat.format(tx.timestamp)}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                MoneyFormat.format(tx.totalAmount),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: isSettlement ? Colors.green[700] : null,
+                ),
+              ),
+              if (!isSettlement)
+                Text(
+                  '${tx.quantitySold} × ${MoneyFormat.format(tx.unitPrice)}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                ),
+            ],
+          ),
+          // Settlements cannot be voided; only regular product sales can.
+          if (!isSettlement)
+            IconButton(
+              icon: const Icon(Icons.delete_outline,
+                  size: 18, color: Colors.grey),
+              tooltip: 'Void transaction & restore stock',
+              onPressed: () => _confirmDeleteTransaction(context, tx),
+            )
+          else
+            const SizedBox(width: 48),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Void transaction dialog
+  // ---------------------------------------------------------------------------
 
   void _confirmDeleteTransaction(
       BuildContext context, SalesTransactionModel tx) {
@@ -806,7 +859,8 @@ class _SalesDashboardPageState extends State<SalesDashboardPage> {
       builder: (ctx) => AlertDialog(
         title: const Text('Void Transaction?'),
         content: Text(
-            'Void ${tx.quantitySold} × ${tx.productName} (${MoneyFormat.format(tx.totalAmount)})?\n\nThis will automatically restore ${tx.quantitySold} units back to the box stock.'),
+            'Void ${tx.quantitySold} × ${tx.productName} (${MoneyFormat.format(tx.totalAmount)})?\n\n'
+            'This will automatically restore ${tx.quantitySold} units back to the box stock.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),

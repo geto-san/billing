@@ -77,6 +77,9 @@ class SalesBloc extends Bloc<SalesEvent, SalesState> {
           state.currentFilter,
           state.customDateRange,
         );
+        final msg = event.transaction.isCreditSettlement
+            ? 'Credit settled: ${event.transaction.creditPersonName ?? event.transaction.productName} — ${event.transaction.totalAmount}'
+            : 'Transaction saved: ${event.transaction.quantitySold} × ${event.transaction.productName}';
         emit(state.copyWith(
           allTransactions: updatedAll,
           filteredTransactions: processed.filtered,
@@ -84,8 +87,7 @@ class SalesBloc extends Bloc<SalesEvent, SalesState> {
           totalUnitsSold: processed.totalUnitsSold,
           productBreakdown: processed.breakdown,
           lastRecordedTransaction: event.transaction,
-          successMessage:
-              'Transaction saved: ${event.transaction.quantitySold} × ${event.transaction.productName}',
+          successMessage: msg,
         ));
       },
     );
